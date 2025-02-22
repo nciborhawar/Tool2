@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF to Image Converter</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.7.1/dist/jszip.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .converter-box { border: 2px dashed #007bff; padding: 20px; text-align: center; margin: 20px 0; }
+        #previewContainer { margin: 20px 0; }
+        .page-thumb { max-width: 200px; margin: 10px; border: 1px solid #ddd; }
+        #loading { display: none; margin: 20px; }
+        button { background: #007bff; color: white; border: none; padding: 10px 20px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+    </style>
+</head>
+<body>
+    <div class="converter-box">
+        <h2>PDF to Image Converter</h2>
+        <input type="file" id="pdfInput" accept=".pdf">
+        <div id="previewContainer">
+            <div id="pageThumbnails"></div>
+        </div>
+        <select id="formatSelect">
+            <option value="jpeg">JPEG</option>
+            <option value="png">PNG</option>
+        </select>
+        <button onclick="convertPDF()">Convert to Images</button>
+        <div id="loading">Processing...</div>
+    </div>
+
+    <script>
+        let pdfDoc = null;
+        const scale = 2; // Image quality scale
+
+        document.getElementById('pdfInput').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (file) await loadPDF(file);
+        });
+
+        async function loadPDF(file) {
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    pdfDoc = await pdfjsLib.getDocument(e.target.result).promise;
+                    showThumbnails();
+                } catch (error) {
+                    alert('Error loading PDF: ' + error.message);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        async function showThumbnails() {
+            const container = document.getElementById('pageThumbnails');
+            container.innerHTML = '';
+            
+            for (let i = 1; i <= pdfDoc.numPages; i++) {
+                const page = await pdfDoc.getPage(i);
+                const viewport = page.getViewport({ scale: 0.5 });
+                const canvas = document.createElement('canvas');
+                canvas.className = 'page-thumb';
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+                
+                await page.render({
+                    canvasContext: canvas.getContext('2d'),
+                    viewport: viewport
+                }).promise;
+                
+                container.appendChild(canvas);
+            }
+        }
+
+        async function convertPDF() {
+            if (!pdfDoc) return alert('Please select a PDF file first');
+            
+            const format = document.getElementById('formatSelect').value;
+            const zip = new JSZip();
+            document.getElementById('loading').style.display = 'block';
+
+            try {
+                for (let i = 1; i <= pdfDoc.numPages; i++) {
+                    const page = await pdfDoc.getPage(i);
+                    const viewport = page.getViewport({ scale });
+                    const canvas = document.createElement('canvas');
+                    canvas.width = viewport.width;
+                    canvas.height = viewport.height;
+
+                    await page.render({
+                        canvasContext: canvas.getContext('2d'),
+                        viewport: viewport
+                    }).promise;
+
+                    const imageData = canvas.toDataURL(`image/${format}`);
+                    const imgData = imageData.split(',')[1];
+                    zip.file(`page_${i}.${format}`, imgData, { base64: true });
+                }
+
+                const zipFile = await zip.generateAsync({ type: 'blob' });
+                const downloadLink = document.createElement('a');
+                downloadLink.href = URL.createObjectURL(zipFile);
+                downloadLink.download = `converted_images.zip`;
+                downloadLink.click();
+                
+            } catch (error) {
+                alert('Conversion error: ' + error.message);
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+
+        // Drag and drop
+        document.addEventListener('dragover', e => e.preventDefault());
+        document.addEventListener('drop', e => {
+            e.preventDefault();
+            const file = e.dataTransfer.files[0];
+            if (file?.type === 'application/pdf') {
+                document.getElementById('pdfInput').files = e.dataTransfer.files;
+                loadPDF(file);
+            }
+        });
+    </script>
+</body>
+</html>
